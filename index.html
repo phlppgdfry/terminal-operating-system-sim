@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Noordkaai TOS · Terminal operations simulator</title>
+<meta name="description" content="A browser simulation of a container terminal: vessels, yard, gate and EDI, minute by minute. Compare yard strategies, break a crane, close gate lanes.">
+<meta property="og:title" content="Noordkaai TOS · Terminal operations simulator">
+<meta property="og:description" content="Vessels, yard, gate and EDI, minute by minute. Compare yard strategies, break a crane, close gate lanes.">
+<meta property="og:image" content="https://phlppgdfry.github.io/terminal-operating-system-sim/docs/preview.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230a0e14%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27%3E%E2%9A%93%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">⚓</span>
+    <div>
+      <strong>Noordkaai TOS</strong>
+      <span class="sub">Terminal operations simulator · fictional terminal</span>
+    </div>
+  </div>
+  <div class="clock" aria-live="off"><span id="clock">Mon 06:00</span><small id="hourCount">hour 0</small></div>
+  <div class="controls">
+    <button id="play" class="primary" aria-label="Play">▶ Play</button>
+    <div class="seg" role="group" aria-label="Speed" id="speed">
+      <button data-speed="10" aria-pressed="false">10×</button>
+      <button data-speed="60" aria-pressed="true">60×</button>
+      <button data-speed="300" aria-pressed="false">300×</button>
+      <button data-speed="1200" aria-pressed="false">1200×</button>
+    </div>
+    <button id="hour" title="Advance one hour">+1 h</button>
+    <button id="reset" title="Restart with the current settings">Reset</button>
+    <button id="tourBtn" class="ghost">Tour</button>
+    <a class="ghost btn" href="frontend/edi-monitor/">EDI monitor ↗</a>
+  </div>
+</header>
+
+<section class="scenario" id="scenario" aria-label="Scenario">
+  <label>Yard strategy
+    <span class="seg" id="strategy" role="group">
+      <button data-v="smart" aria-pressed="true">Smart</button>
+      <button data-v="random" aria-pressed="false">Random</button>
+    </span>
+  </label>
+  <label>Gate lanes open
+    <span class="seg" id="lanes" role="group">
+      <button data-v="4" aria-pressed="true">4</button>
+      <button data-v="2" aria-pressed="false">2</button>
+    </span>
+  </label>
+  <label>Crane at Q1
+    <span class="seg" id="crane" role="group">
+      <button data-v="ok" aria-pressed="true">Working</button>
+      <button data-v="down" aria-pressed="false">Broken</button>
+    </span>
+  </label>
+  <label>Customs holds
+    <span class="seg" id="holds" role="group">
+      <button data-v="0" aria-pressed="false">0%</button>
+      <button data-v="0.12" aria-pressed="true">12%</button>
+      <button data-v="0.3" aria-pressed="false">30%</button>
+    </span>
+  </label>
+  <label>Seed <input id="seed" type="number" value="42" min="1" max="99999"></label>
+  <button id="compare" class="accent">Compare strategies · 72 h</button>
+  <span class="hint">Settings apply on Reset.</span>
+</section>
+
+<section class="kpis" id="kpis" aria-label="Key figures"></section>
+
+<main class="grid">
+  <section class="panel" id="quayPanel">
+    <h2>Quay <small>2 berths · 2 cranes per vessel</small></h2>
+    <div id="berths"></div>
+    <h3>Next arrivals</h3>
+    <ol id="arrivals" class="list"></ol>
+  </section>
+
+  <section class="panel" id="yardPanel">
+    <h2>Yard <small>6 blocks · 10 bays × 6 rows × 4 high</small>
+      <label class="search"><span class="sr">Find a container</span><input id="find" placeholder="Find container, e.g. NKTU…" autocomplete="off" spellcheck="false"></label>
+    </h2>
+    <div class="legend">
+      <span><i class="h0"></i>empty</span><span><i class="h1"></i>1</span><span><i class="h2"></i>2</span><span><i class="h3"></i>3</span><span><i class="h4"></i>4 high</span>
+      <span class="sep"></span><span><i class="imp"></i>import</span><span><i class="exp"></i>export</span><span><i class="rf"></i>reefer</span>
+    </div>
+    <div id="yard" class="yard"></div>
+    <div id="inspector" class="inspector" hidden></div>
+  </section>
+
+  <section class="panel" id="gatePanel">
+    <h2>Gate <small id="gateSub"></small></h2>
+    <div id="lanesView" class="lanes"></div>
+    <div class="queue"><span>Queue</span><strong id="queueLen">0</strong><span class="bar"><i id="queueBar"></i></span></div>
+    <div class="queue"><span>Straddle carriers</span><strong id="equip">0/8</strong><span class="bar"><i id="equipBar"></i></span></div>
+    <h2 class="mt">EDI <small id="ediCount"></small></h2>
+    <div class="edi-filter seg" id="ediFilter" role="group">
+      <button data-v="ALL" aria-pressed="true">All</button>
+      <button data-v="BAPLIE" aria-pressed="false">BAPLIE</button>
+      <button data-v="COPARN" aria-pressed="false">COPARN</button>
+      <button data-v="CODECO" aria-pressed="false">CODECO</button>
+      <button data-v="COARRI" aria-pressed="false">COARRI</button>
+    </div>
+    <ol id="edi" class="list edi"></ol>
+  </section>
+</main>
+
+<section class="bottom">
+  <section class="panel" id="logPanel">
+    <h2>Operations log</h2>
+    <ol id="log" class="list log"></ol>
+  </section>
+  <section class="panel" id="comparePanel">
+    <h2>Strategy comparison <small>same seed, same ships, same trucks</small></h2>
+    <div id="compareOut" class="compare"><p class="muted">Press <b>Compare strategies</b> to run 72 hours twice, once per yard strategy, without the screen.</p></div>
+    <div class="actions">
+      <button id="csv">Download move log (CSV)</button>
+      <a class="btn ghost" href="database/schema.sql">Oracle schema ↗</a>
+      <a class="btn ghost" href="https://github.com/phlppgdfry/terminal-operating-system-sim">Source ↗</a>
+    </div>
+  </section>
+</section>
+
+<footer class="foot">
+  Noordkaai Container Terminal is fictional. Vessels, containers and companies are generated; the model is simplified and deterministic per seed.
+  Built by <a href="https://philippegodfroy.com">Philippe Godfroy</a>.
+</footer>
+
+<dialog id="msg">
+  <form method="dialog">
+    <header><strong id="msgTitle"></strong><span id="msgCheck" class="ok"></span><button value="close" aria-label="Close">✕</button></header>
+    <pre id="msgText"></pre>
+    <footer><button type="button" id="copyMsg">Copy</button><a class="btn ghost" href="frontend/edi-monitor/">Open EDI monitor ↗</a></footer>
+  </form>
+</dialog>
+
+<div id="tour" class="tour" hidden>
+  <div class="tour-card" role="dialog" aria-live="polite">
+    <p class="tour-step" id="tourStep"></p>
+    <h3 id="tourTitle"></h3>
+    <p id="tourText"></p>
+    <div class="tour-nav"><button id="tourPrev" class="ghost">Back</button><button id="tourNext" class="primary">Next</button><button id="tourClose" class="ghost">Close</button></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
